@@ -1,90 +1,137 @@
 import { useEffect, useMemo, useState } from "react";
-import "./App.css";
 import { io } from "socket.io-client";
+import "./App.css";
+
 function App() {
   const socket = useMemo(() => io("http://localhost:3000"), []);
-  const [message, setmessage] = useState("");
-  const [msgArr, setmsgArr] = useState([]);
-  const [data, setdata] = useState([]);
-  const [SocketId, setSocketId] = useState("");
-  const [room, setroom] = useState("");
-  const [RoomName, SetRoomName] = useState("");
+  const [userId, setUserId] = useState("");
+  const [isRegistered, setIsRegistered] = useState(false);
+  const [targetId, setTargetId] = useState("");
+  const [roomName, setRoomName] = useState("");
+  const [joinedRoom, setJoinedRoom] = useState("");
+  const [message, setMessage] = useState("");
+  const [chat, setChat] = useState([]);
 
-  const handleSubmit = e => {
+  const handleRegister = e => {
     e.preventDefault();
-    socket.emit("message", { message, room });
-    setmessage("");
-    setmsgArr(prevMsg => [...prevMsg, message]);
+    if (userId.trim()) {
+      socket.emit("register", userId);
+      setIsRegistered(true);
+    }
   };
 
-  const handleJoin = e => {
+  const handleJoinRoom = () => {
+    if (roomName.trim()) {
+      socket.emit("join-room", roomName);
+      setJoinedRoom(roomName);
+      setRoomName("");
+    }
+  };
+
+  const handleSendPrivate = e => {
     e.preventDefault();
-    socket.emit("Create_room", RoomName);
-    SetRoomName("");
+    if (targetId.trim() && message.trim()) {
+      socket.emit("private-message", {
+        toUserId: targetId,
+        fromUserId: userId,
+        message,
+      });
+      setChat(prev => [...prev, { from: "You", message, type: "private" }]);
+      setMessage("");
+    }
+  };
+
+  const handleSendRoom = e => {
+    e.preventDefault();
+    if (joinedRoom && message.trim()) {
+      socket.emit("room-message", {
+        room: joinedRoom,
+        fromUserId: userId,
+        message,
+      });
+      setChat(prev => [
+        ...prev,
+        { from: "You", message, type: "room", room: joinedRoom },
+      ]);
+      setMessage("");
+    }
   };
 
   useEffect(() => {
-    socket.on("connect", () => {
-      console.log(`connected ${socket.id}`);
-      setSocketId(socket.id);
-    });
     socket.on("received-message", data => {
-      console.log(data);
-      setdata(prevdata => [...prevdata, data]);
+      setChat(prev => [...prev, data]);
     });
+
+    return () => {
+      socket.off("received-message");
+    };
   }, [socket]);
 
-  socket.on("welcome", Socket => {
-    console.log(Socket);
-  });
-
   return (
-    <>
-      <form onSubmit={handleJoin}>
-        <input
-          onChange={e => {
-            SetRoomName(e.target.value);
-          }}
-          type="text"
-          value={RoomName}
-          placeholder="message"
-        />
-        <button type="submit">join</button>
-      </form>
+    <div className="container">
+      {!isRegistered ? (
+        <form onSubmit={handleRegister} className="form">
+          <h2>Enter your User ID</h2>
+          <input
+            type="text"
+            placeholder="Your ID (e.g., alice)"
+            value={userId}
+            onChange={e => setUserId(e.target.value)}
+          />
+          <button type="submit">Join Chat</button>
+        </form>
+      ) : (
+        <div className="chat-wrapper">
+          <h3>
+            Welcome, <span className="highlight">{userId}</span>
+          </h3>
 
-      <form onSubmit={handleSubmit} action="">
-        {msgArr.map((msg, index) => (
-          <p className="sender" key={index}>
-            {" "}
-            {msg}{" "}
-          </p>
-        ))}
-        {data.map((data, index) => (
-          <p className="reciver" key={index}>
-            {" "}
-            {data}{" "}
-          </p>
-        ))}
-        <p> {SocketId} </p>
-        <input
-          onChange={e => {
-            setmessage(e.target.value);
-          }}
-          type="text"
-          value={message}
-          placeholder="message"
-        />
-        <input
-          onChange={e => {
-            setroom(e.target.value);
-          }}
-          type="text"
-          value={room}
-          placeholder="room"
-        />
-        <button type="submit">Send message</button>
-      </form>
-    </>
+          <div className="form">
+            <input
+              type="text"
+              placeholder="Join Room (e.g., room1)"
+              value={roomName}
+              onChange={e => setRoomName(e.target.value)}
+            />
+            <button onClick={handleJoinRoom}>Join Room</button>
+            {joinedRoom && (
+              <p>
+                ✅ Joined room: <b>{joinedRoom}</b>
+              </p>
+            )}
+          </div>
+
+          <div className="form">
+            <input
+              type="text"
+              placeholder="To User ID"
+              value={targetId}
+              onChange={e => setTargetId(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Your message"
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+            />
+            <button onClick={handleSendPrivate}>Send Private</button>
+            <button onClick={handleSendRoom} disabled={!joinedRoom}>
+              Send to Room
+            </button>
+          </div>
+
+          <div className="messages">
+            {chat.map((msg, i) => (
+              <p key={i}>
+                <strong>{msg.from}</strong> (
+                {msg.type === "room" ? `Room: ${msg.room}` : "Private"}):{" "}
+                {msg.message}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
